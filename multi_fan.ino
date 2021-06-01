@@ -1210,26 +1210,42 @@ void callback(char* topic, byte* payload, unsigned int length) {
   // strip off the hostname from the topic
   topic += strlen(config.host_name) + 1;
 
-  char value[12];
+  char value[24];
   memcpy(value, payload, length);
   value[length] = '\0';
   Serial.printf("Message arrived [%s] %s\n", topic, value);
 
   if (strcmp(topic, "action") == 0) {
-    // cpd...todo, split the action and which out of the value
-    // not done
+    char *ptr = strchr(value, '/');
+    if (!ptr) {
+      Serial.printf("missing seperator: %s\n", value);
+      return;
+    }
+    *ptr = '\0';
     char *action = value;
-    char *which = value;
+    char *which = ptr + 1;
     int w = 0;
+    if (strcmp(which, "Family") == 0) {
+      w = 0;
+    }
+    else if (strcmp(which, "Gym") == 0) {
+      w = 1;
+    }
+    else {
+      Serial.printf("Invalid which: %s\n", which);
+      return;
+    }
+    
     int numOutputs = sizeof(outputs)/sizeof(outputs[0]);
     for (int i=0; i < numOutputs; ++i) {
-      if (strcmp(actionNames[i], value) == 0) {
+      if (strcmp(actionNames[i], action) == 0) {
         doAction(i, w);
-        break;
+        return;
       }
     }
+    Serial.printf("Invalid action: %s\n", action);
   }
   else {
-    Serial.printf("Unknown topic\n");
+    Serial.printf("Unknown topic: %s\n", topic);
   }
 }
