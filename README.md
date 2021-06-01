@@ -1,2 +1,2 @@
-# fan
+# multi_fan
 #test
