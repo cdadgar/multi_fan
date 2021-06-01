@@ -6,6 +6,16 @@
 <script src='https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js'></script>
 <script src='https://ajax.googleapis.com/ajax/libs/jqueryui/1.11.4/jquery-ui.min.js'></script>
 <script src='common.js'></script>
+<style>
+#block_container
+{
+    text-align:left;
+}
+#mode, #which
+{
+    display:inline;
+}
+</style>
 <script>
 $(document).ready(function(){
   initGui();
@@ -22,7 +32,7 @@ function message(msg){
     extra = '&deg;';
   }
 
-  if (obj.command == 'mode') {
+  if (obj.command == 'mode' || obj.command == 'which') {
     $('#' + obj.command + obj.value).prop('checked', true).button('refresh');
     return;
   }
@@ -36,6 +46,7 @@ function initGui(){
     document.body.style.zoom = '150%';
 
   $('#mode').buttonset();
+  $('#which').buttonset();
   
   $(':radio').click(function() {
     var json = {
@@ -100,12 +111,18 @@ function send(value) {
     <span id='currentTemp' class='ui-widget'></span><br>
     <span id='status' class='ui-widget'></span>
   </div>
-  <div id='mode'>
-    <input type='radio' id='mode0' name='mode' value='0'><label for='mode0'>Off</label>
-    <input type='radio' id='mode1' name='mode' value='1'><label for='mode1'>Run</label>
+  <div id="block_container">
+    <div id='mode'>
+	  <input type='radio' id='mode0' name='mode' value='0'><label for='mode0'>Off</label>
+	  <input type='radio' id='mode1' name='mode' value='1'><label for='mode1'>Run</label>
+	</div>
+	<div id='which'>
+	  <input type='radio' id='which0' name='which' value='0'><label for='which0'>Family</label>
+	  <input type='radio' id='which1' name='which' value='1'><label for='which1'>Gym</label>
+	</div>
   </div>
   <br>
- <button id='off'>Off</button>
+  <button id='off'>Off</button>
   <button id='low'>Low</button>
   <button id='medium'>Medium</button>
   <button id='high'>High</button>
