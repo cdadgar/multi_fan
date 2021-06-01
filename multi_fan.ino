@@ -104,6 +104,7 @@ dip     0
 //                 off, low, medium, high, direction, top, bottom, dip
 byte outputs[] = { 14,  12,  13,     15,   16,        4,   5,      0 }; 
 const char *actionNames[] = {"Off", "Low", "Medium", "High", "Direction", "Top", "Bottom", "Dip"};
+const char *whichNames[] = {"Family", "Gym"};
 
 /*
  * there are 4 dip switches that set the fan's id.
@@ -122,6 +123,9 @@ unsigned long lastMinutes;
 #define OFF    0
 #define RUN    1
 
+#define FAMILY 0
+#define GYM    1
+byte which = FAMILY;
 
 #define NONE         -1
 #define TIME_OFF     255
@@ -134,6 +138,7 @@ typedef struct {
   byte dayMask;
   byte startTime[NUM_TIMES];
   byte action[NUM_TIMES];
+  byte which[NUM_TIMES];
 } programType;
 
 programType program[NUM_PROGRAMS];
@@ -193,6 +198,7 @@ void saveProgramConfig(void);
 unsigned long sendNTPpacket(IPAddress& address);
 void printTime(bool isCheckProgram, bool isTest);
 void printMode(void);
+void printWhich(void);
 void sendWeb(const char *command, const char *value);
 void checkTimeMinutes(void);
 void saveConfig(void);
@@ -200,7 +206,7 @@ void startProgram(int index, int startIndex);
 void checkProgram(int day, int h, int m);
 void update(int addr, byte data);
 void printRunning(void);
-void doAction(int action);
+void doAction(int action, int which);
 
 
 void setup(void) {
@@ -271,6 +277,7 @@ time starts at 12am = 0, and goes in 15 minute increments
     for (int j=0; j < NUM_TIMES; ++j) {
       program[i].startTime[j] = TIME_OFF;
       program[i].action[j] = OFF;
+      program[i].which[j] = FAMILY;
     }
   }
   
@@ -449,8 +456,17 @@ void setupTime(void) {
 void printMode(void) {
   if (webClient != -1) {
     char buf[3];
-    sprintf(buf, "%d", config.mode);    
+    sprintf(buf, "%d", config.mode);
     sendWeb("mode", buf);
+  }
+}
+
+
+void printWhich(void) {
+  if (webClient != -1) {
+    char buf[3];
+    sprintf(buf, "%d", which);
+    sendWeb("which", buf);
   }
 }
 
@@ -499,11 +515,13 @@ void checkTimeMinutes() {
 }
 
 
-void sendMqtt(int action) {
+void sendMqtt(int action, int which) {
   if (config.use_mqtt) {
     char topic[30];
     sprintf(topic, "%s/action", config.host_name);
-    client.publish(topic, actionNames[action]);
+    char msg[30];
+    sprintf(msg, "%s/%s", actionNames[action], whichNames[which]);
+    client.publish(topic, msg);
   }
 }
 
@@ -553,6 +571,7 @@ void startProgram(int index, int startIndex) {
   printMode();
 
   int action = program[index].action[startIndex];
+  int which = program[index].which[startIndex];
 
   // if the room is colder than the minimum fan temperature,
   // then don't turn the fan on
@@ -564,22 +583,28 @@ void startProgram(int index, int startIndex) {
   }
     
 
-  Serial.printf("starting program %d-%d: %d\n", (index+1), (startIndex+1), action);
-  doAction(action);
-  sendMqtt(action);
+  Serial.printf("starting program %d-%d: %d,%d\n", (index+1), (startIndex+1), action, which);
+  doAction(action, which);
+  sendMqtt(action, which);
 }
 
 
-void doAction(int action) {
+void doAction(int action, int which) {
+  // set the dip switch to select the correct fan
+  digitalWrite(DIP, which);
+  
   // press the button for 500 msec
   int pin = outputs[action];
   digitalWrite(pin, !DEFAULT_OUTPUT);
   delay(500);
   digitalWrite(pin, DEFAULT_OUTPUT);
 
-  Serial.printf("action %s on gpio: %d\n", actionNames[action], pin);
-  if (webClient != -1)
-    sendWeb("status", actionNames[action]);
+  Serial.printf("action %s on %s, gpio: %d\n", actionNames[action], whichNames[which], pin);
+  if (webClient != -1) {
+    char msg[30];
+    sprintf(msg, "%s/%s", actionNames[action], whichNames[which]);
+    sendWeb("status", msg);
+  }
 }
 
 
@@ -806,6 +831,7 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t lenght
         printName();
         printCurrentTemperature();
         printMode();
+        printWhich();
         printTime(false, false);
       }
       else if (strcmp((char *)payload,"/program") == 0) {
@@ -819,7 +845,9 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t lenght
           for (int j=0; j < NUM_TIMES; ++j)
             sprintf(json+strlen(json), "%d%s", program[i].startTime[j], (j==NUM_TIMES-1)?"],[":",");
           for (int j=0; j < NUM_TIMES; ++j)
-            sprintf(json+strlen(json), "%d%s", program[i].action[j], (j==NUM_TIMES-1)?"]]":",");
+            sprintf(json+strlen(json), "%d%s", program[i].action[j], (j==NUM_TIMES-1)?"],[":",");
+          for (int j=0; j < NUM_TIMES; ++j)
+            sprintf(json+strlen(json), "%d%s", program[i].which[j], (j==NUM_TIMES-1)?"]]":",");
         }
         strcpy(json+strlen(json), "]}");
         //Serial.printf("len %d\n", strlen(json));
@@ -858,12 +886,17 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t lenght
           config.mode = strtol(ptr, &ptr, 10);
           saveConfig();
         }        
+        else if (strncmp(ptr,"which",5) == 0) {
+          target = "value";
+          ptr = strstr(ptr, target) + strlen(target)+3;
+          which = strtol(ptr, &ptr, 10);
+        }        
         else if (strncmp(ptr,"button",6) == 0) {
           target = "value";
           ptr = strstr(ptr, target) + strlen(target)+2;
           int action = strtol(ptr, &ptr, 10);
-          doAction(action);
-          sendMqtt(action);
+          doAction(action, which);
+          sendMqtt(action, which);
         }        
       }
       else if (num == programClient) {
@@ -884,6 +917,11 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t lenght
           for (int j=0; j < NUM_TIMES; ++j, ++ptr) {
             program[i].action[j] = strtol(ptr, &ptr, 10);
 //            Serial.printf("action %d %d %d\n", i, j, program[i].action[j]);
+          }
+          ptr += 2;
+          for (int j=0; j < NUM_TIMES; ++j, ++ptr) {
+            program[i].which[j] = strtol(ptr, &ptr, 10);
+//            Serial.printf("which %d %d %d\n", i, j, program[i].which[j]);
           }
           ptr += 3;
         }      
@@ -1178,10 +1216,15 @@ void callback(char* topic, byte* payload, unsigned int length) {
   Serial.printf("Message arrived [%s] %s\n", topic, value);
 
   if (strcmp(topic, "action") == 0) {
+    // cpd...todo, split the action and which out of the value
+    // not done
+    char *action = value;
+    char *which = value;
+    int w = 0;
     int numOutputs = sizeof(outputs)/sizeof(outputs[0]);
     for (int i=0; i < numOutputs; ++i) {
       if (strcmp(actionNames[i], value) == 0) {
-        doAction(i);
+        doAction(i, w);
         break;
       }
     }
