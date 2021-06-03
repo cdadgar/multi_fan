@@ -167,7 +167,7 @@ bool isTimeSet = false;
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-#define HOST_NAME "FAN"
+#define HOST_NAME "MULTI-FAN"
 #define MQTT_IP_ADDR "192.168.1.210"
 #define MQTT_IP_PORT 1883
 
@@ -517,11 +517,9 @@ void checkTimeMinutes() {
 
 void sendMqtt(int action, int which) {
   if (config.use_mqtt) {
-    char topic[30];
-    sprintf(topic, "%s/action", config.host_name);
-    char msg[30];
-    sprintf(msg, "%s/%s", actionNames[action], whichNames[which]);
-    client.publish(topic, msg);
+    char topic[40];
+    sprintf(topic, "%s/action/%s", config.host_name, whichNames[which]);
+    client.publish(topic, actionNames[action]);
   }
 }
 
@@ -591,7 +589,7 @@ void startProgram(int index, int startIndex) {
 
 void doAction(int action, int which) {
   // set the dip switch to select the correct fan
-  digitalWrite(DIP, which);
+  digitalWrite(DIP, !which);
   
   // press the button for 500 msec
   int pin = outputs[action];
@@ -639,7 +637,7 @@ void checkProgram(int day, int h, int m) {
 }
 
 
-#define MAGIC_NUM   0xAD
+#define MAGIC_NUM   0xAE
 
 #define MAGIC_NUM_ADDRESS      0
 #define CONFIG_ADDRESS         1
@@ -991,7 +989,7 @@ void printCurrentTemperature() {
   
   // mqtt
   if (config.use_mqtt) {
-    char topic[20];
+    char topic[40];
     sprintf(topic, "%s/temperature", config.host_name);
     client.publish(topic, buf);
   }
@@ -1189,9 +1187,11 @@ void reconnect() {
 //    if (client.connect(clientId.c_str())) {
     if (client.connect(config.host_name)) {
       Serial.println("connected");
-      // ... and resubscribe
-      char topic[30];
-      sprintf(topic, "%s/action", config.host_name);
+      // ... and resubscribe (to both fan topics)
+      char topic[40];
+      sprintf(topic, "%s/action/%s", config.host_name, whichNames[FAMILY]);
+      client.subscribe(topic);
+      sprintf(topic, "%s/action/%s", config.host_name, whichNames[GYM]);
       client.subscribe(topic);
     } else {
       Serial.print("failed, rc=");
@@ -1205,45 +1205,39 @@ void reconnect() {
 
 
 void callback(char* topic, byte* payload, unsigned int length) {
-  // only topic we get is <host_name>/action
+  // only topic we get is <host_name>/action/<fan_name>
   
   // strip off the hostname from the topic
   topic += strlen(config.host_name) + 1;
 
-  char value[24];
+  char value[40];
   memcpy(value, payload, length);
   value[length] = '\0';
   Serial.printf("Message arrived [%s] %s\n", topic, value);
 
-  if (strcmp(topic, "action") == 0) {
-    char *ptr = strchr(value, '/');
-    if (!ptr) {
-      Serial.printf("missing seperator: %s\n", value);
-      return;
-    }
-    *ptr = '\0';
-    char *action = value;
-    char *which = ptr + 1;
+  if (strncmp(topic,"action",6) == 0) {
+    // now strip off the action from the topic
+    topic += (6 + 1);
     int w = 0;
-    if (strcmp(which, "Family") == 0) {
+    if (strcmp(topic, "Family") == 0) {
       w = 0;
     }
-    else if (strcmp(which, "Gym") == 0) {
+    else if (strcmp(topic, "Gym") == 0) {
       w = 1;
     }
     else {
-      Serial.printf("Invalid which: %s\n", which);
+      Serial.printf("Invalid which: %s\n", topic);
       return;
     }
     
     int numOutputs = sizeof(outputs)/sizeof(outputs[0]);
     for (int i=0; i < numOutputs; ++i) {
-      if (strcmp(actionNames[i], action) == 0) {
+      if (strcmp(actionNames[i], value) == 0) {
         doAction(i, w);
         return;
       }
     }
-    Serial.printf("Invalid action: %s\n", action);
+    Serial.printf("Invalid action: %s\n", value);
   }
   else {
     Serial.printf("Unknown topic: %s\n", topic);
