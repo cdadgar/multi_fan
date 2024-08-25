@@ -26,7 +26,7 @@ function message(msg){
   console.log('onmessage ' + msg.data);
   var obj = JSON.parse(msg.data);
   var extra = '';
-  if (obj.value != '' && (obj.command == 'currentTemp')) {
+  if (obj.value != '' && (obj.command == 'currentTemp' || obj.command == 'currentTemp2')) {
     if (obj.value == '-999.0')
       return;
     extra = '&deg;';
@@ -36,6 +36,7 @@ function message(msg){
     $('#' + obj.command + obj.value).prop('checked', true).button('refresh');
     return;
   }
+
   $('#'+obj.command).html(obj.value + extra);
 }
 
@@ -109,6 +110,7 @@ function send(value) {
     <span id='name' class='ui-widget'></span><br>
     <span id='time' class='ui-widget'></span><br>
     <span id='currentTemp' class='ui-widget'></span><br>
+    <span id='currentTemp2' class='ui-widget'></span><br>
     <span id='status' class='ui-widget'></span>
   </div>
   <div id="block_container">
