@@ -88,9 +88,10 @@ const char *weekdayNames[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 // --------------------------------------------
 
 #define DEFAULT_OUTPUT 0
-#define FAN_LOW 1
+#define FAN_OFF    0
+#define FAN_LOW    1
 #define FAN_MEDIUM 2
-#define FAN_HIGH 3
+#define FAN_HIGH   3
 /*
 top     4
 bottom  5
@@ -117,7 +118,10 @@ const char *whichNames[] = {"Family", "Gym"};
  */
 #define DIP 0
 
+unsigned long startTime;
+int lastAction[2];
 bool isSetup = false;
+bool isDelaySetup = false;
 unsigned long lastMinutes;
 
 #define OFF    0
@@ -248,6 +252,10 @@ void setup(void) {
   webSocket.onEvent(webSocketEvent);
     
   lastMinutes = 0;
+
+  doAction(FAN_OFF, 0);
+  doAction(FAN_OFF, 1);
+  startTime = millis();
 
   isSetup = true;
 }
@@ -509,6 +517,13 @@ void loop(void)
    
   unsigned long time = millis();
 
+  // wait 5 sec after startup to send default mqtt state
+  if (!isDelaySetup && time > (startTime + 5000)) {
+    sendMqtt(lastAction[0], 0);
+    sendMqtt(lastAction[1], 1);
+    isDelaySetup = true;  
+  }
+
   checkTimeMinutes();
   checkTemperature(time);
 
@@ -627,6 +642,8 @@ void doAction(int action, int which) {
   digitalWrite(pin, !DEFAULT_OUTPUT);
   delay(500);
   digitalWrite(pin, DEFAULT_OUTPUT);
+
+  lastAction[which] = action;
 
   Serial.printf("action %s on %s, gpio: %d\n", actionNames[action], whichNames[which], pin);
   if (webClient != -1) {
@@ -863,6 +880,10 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t lenght
         printMode();
         printWhich();
         printTime(false, false);
+
+        char msg[30];
+        sprintf(msg, "%s/%s", actionNames[lastAction[which]], whichNames[which]);
+        sendWeb("status", msg);
       }
       else if (strcmp((char *)payload,"/program") == 0) {
         programClient = num;
